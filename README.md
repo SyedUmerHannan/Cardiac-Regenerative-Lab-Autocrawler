@@ -10,11 +10,27 @@ By orchestrating academic literature APIs, global grant repositories, clinical t
 
 The engine operates as a sequential modular pipeline with data stored and versioned by run year (`data/YYYY/`).
 
-[ Ingestion Layer ] ──────────────► [ Intelligence & Resolution ] ──────► [ Scoring & Analytics ]
-├── 1. Academic Papers (PubMed/PMC) ├── 5. Relevance Filtering (Claude)   ├── 8. Activity & Risk Scoring (AVI)
-├── 2. Grant DBs (NIH/EU/UKRI)      ├── 6. Structured Field Extraction     └── 9. CSV Report & Annual Diffing
-├── 3. Clinical Trials              └── 7. Entity Deduplication (ORCID/Email)
-└── 4. Targeted Web Crawling
+```mermaid
+graph LR
+    subgraph Ingestion["Ingestion Layer"]
+        A1[1. Academic Papers - PubMed/PMC]
+        A2[2. Grant DBs - NIH/EU/UKRI]
+        A3[3. Clinical Trials]
+        A4[4. Targeted Web Crawling]
+    end
+
+    subgraph Intelligence["Intelligence & Resolution"]
+        B1[5. Relevance Filtering - Claude]
+        B2[6. Structured Field Extraction]
+        B3[7. Entity Deduplication - ORCID/Email]
+    end
+
+    subgraph Analytics["Scoring & Analytics"]
+        C1[8. Activity & Risk Scoring - AVI]
+        C2[9. CSV Report & Annual Diffing]
+    end
+
+    Ingestion --> Intelligence --> Analytics
 
 ---
 
