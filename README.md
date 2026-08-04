@@ -66,11 +66,11 @@ cardiac_lab_finder/
 
 - Core Research Focus:
 
--- Cell & Gene Sources: hiPSC-CMs, primary CMs, direct lineage reprogramming, cardiac progenitors, mRNA therapies.
+  - Cell & Gene Sources: hiPSC-CMs, primary CMs, direct lineage reprogramming, cardiac progenitors, mRNA therapies.
 
--- Constructs & Bioengineering: Engineered Heart Tissue (EHT), cardiac patches, decellularized matrices, 3D bioprinting.
+  - Constructs & Bioengineering: Engineered Heart Tissue (EHT), cardiac patches, decellularized matrices, 3D bioprinting.
 
--- Functional Vectors: Biological pacing, electromechanical coupling/arrhythmia mitigation, vascularization.
+  - Functional Vectors: Biological pacing, electromechanical coupling/arrhythmia mitigation, vascularization.
 
 - Experimental Models: In vitro (EHT/Organ-on-a-chip), Small Animal (murine), Large Animal (porcine/NHP).
 
@@ -127,8 +127,8 @@ Upon completing a run, outputs are saved to the current year directory in data/:
 
 - data/YYYY/annual_diff_summary.md: Auto-generated summary detailing:
 
--- 🆕 Newly Discovered Labs (labs appearing for the first time).
+  - 🆕 Newly Discovered Labs (labs appearing for the first time).
 
--- 📈 Funding Shifts (significant variations in grant totals).
+  - 📈 Funding Shifts (significant variations in grant totals).
 
--- ⚠️ Inactive Status (labs with no publication/grant activity over the past 36 months).
+  - ⚠️ Inactive Status (labs with no publication/grant activity over the past 36 months).
