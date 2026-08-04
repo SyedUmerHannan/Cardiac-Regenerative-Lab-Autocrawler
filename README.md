@@ -31,7 +31,7 @@ graph LR
     end
 
     Ingestion --> Intelligence --> Analytics
-
+```
 ---
 
 ## 📁 Repository Structure
