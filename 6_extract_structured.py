@@ -127,6 +127,41 @@ def _known_fields_for_record(rec: dict[str, Any]) -> dict[str, Any]:
     return {}  # lab_pages: nothing pre-parsed, Claude extracts everything
 
 
+def _record_year(rec: dict[str, Any]) -> int | None:
+    """
+    Extracts a single year of 'most recent activity' from a raw record, for
+    step 8's recency scoring. Each source type stores dates differently:
+    papers have pub_year directly; grants use fiscal_year; trials don't have
+    a single clean year field, so the later of start/completion date is used
+    (a trial still recruiting or completing soon is more 'active' evidence
+    than one that started years ago). Crawled lab pages have no reliable
+    date at all and are left undated (they still count as evidence of an
+    active lab, just not for recency scoring).
+    """
+    record_type = rec.get("record_type")
+
+    if record_type == "papers":
+        year = rec.get("pub_year", "")
+        return int(year) if str(year).strip().isdigit() else None
+
+    if record_type == "grants":
+        year = rec.get("fiscal_year", "")
+        try:
+            return int(year)
+        except (TypeError, ValueError):
+            return None
+
+    if record_type == "trials":
+        for date_field in ("completion_date", "start_date"):
+            date_str = rec.get(date_field, "") or ""
+            match = date_str[:4]
+            if match.isdigit():
+                return int(match)
+        return None
+
+    return None  # lab_pages: no reliable date
+
+
 def _text_for_record(rec: dict[str, Any]) -> str:
     record_type = rec.get("record_type")
     if record_type in ("papers", "grants"):
@@ -273,6 +308,7 @@ def main():
                 "project_num": original.get("project_num", ""),
                 "nct_id": original.get("nct_id", ""),
                 "url": original.get("url", ""),
+                "year": _record_year(original),
             },
         })
 
