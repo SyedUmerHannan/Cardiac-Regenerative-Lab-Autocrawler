@@ -49,7 +49,7 @@ CSV_COLUMNS = [
     "city", "country", "institutional_profile_url", "lab_url", "google_scholar",
     "contact", "translational_stage", "cell_gene_sources", "constructs_bioengineering",
     "functional_vectors", "experimental_models", "grant_funding_usd",
-    "clinical_trial_ids", "avi_status", "avi_score", "most_recent_activity_year",
+    "clinical_trial_ids", "patent_ids", "avi_status", "avi_score", "most_recent_activity_year",
     "electromechanical_risk_profile", "member_count", "source_record_types",
 ]
 
@@ -85,6 +85,7 @@ def flatten_lab(lab: dict[str, Any]) -> dict[str, str]:
         "experimental_models": _join(lab.get("experimental_models", [])),
         "grant_funding_usd": metrics.get("grant_funding_usd", "") or "",
         "clinical_trial_ids": _join(metrics.get("clinical_trial_ids", [])),
+        "patent_ids": _join(metrics.get("patent_ids", [])),
         "avi_status": avi.get("status", ""),
         "avi_score": avi.get("avi_score", "") if avi.get("avi_score") is not None else "",
         "most_recent_activity_year": avi.get("most_recent_activity_year", "") or "",
