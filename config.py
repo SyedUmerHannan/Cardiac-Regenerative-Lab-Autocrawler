@@ -48,6 +48,10 @@ FILES = {
     "raw_grants": "raw_grants.json",
     "raw_trials": "raw_trials.json",
     "raw_lab_pages": "raw_lab_pages.json",
+    "raw_patents": "raw_patents.json",
+    "funding_leaderboard_csv": "funding_leaderboard.csv",
+    "funding_leaderboard_institutions_csv": "funding_leaderboard_institutions.csv",
+    "trial_dashboard_html": "trial_dashboard.html",
     "filtered": "filtered.json",
     "labs_extracted": "labs_extracted.json",
     "labs_deduped": "labs_deduped.json",
@@ -103,6 +107,14 @@ SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
 NIH_REPORTER_BASE = "https://api.reporter.nih.gov/v2/projects/search"
 
 CLINICALTRIALS_BASE = "https://clinicaltrials.gov/api/v2/studies"
+
+# USPTO PatentsView API v1. Requires a free API key (register at
+# https://patentsview.org/apis/keyrequest) sent as an X-Api-Key header.
+# US-only coverage — Lens.org would give global coverage but requires a paid
+# subscription, so PatentsView is the v1 default. Revisit if international
+# patent coverage becomes a priority.
+USPTO_PATENTSVIEW_BASE = "https://search.patentsview.org/api/v1/patent/"
+USPTO_PATENTSVIEW_API_KEY = os.environ.get("USPTO_PATENTSVIEW_API_KEY", "")
 
 # Grant sources beyond NIH RePORTER (Horizon Europe, UKRI) are NOT yet wired up
 # in v1 — NIH RePORTER has the cleanest public API and is built first.
