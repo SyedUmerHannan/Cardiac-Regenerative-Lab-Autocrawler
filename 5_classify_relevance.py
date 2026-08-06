@@ -100,6 +100,12 @@ def normalize_candidates() -> list[dict[str, Any]]:
         if text:
             candidates.append({"id": f"trials_{i}", "record_type": "trials", "source_index": i, "text": text[:3000]})
 
+    patents = _load_json("raw_patents")
+    for i, rec in enumerate(patents):
+        text = f"{rec.get('title', '')}\n\n{rec.get('abstract', '')}".strip()
+        if text:
+            candidates.append({"id": f"patents_{i}", "record_type": "patents", "source_index": i, "text": text[:3000]})
+
     lab_pages = _load_json("raw_lab_pages")
     for i, rec in enumerate(lab_pages):
         text = f"{rec.get('title', '')}\n\n{rec.get('text', '')}".strip()
@@ -213,6 +219,7 @@ def main():
         "papers": _load_json("raw_papers"),
         "grants": _load_json("raw_grants"),
         "trials": _load_json("raw_trials"),
+        "patents": _load_json("raw_patents"),
         "lab_pages": _load_json("raw_lab_pages"),
     }
 
