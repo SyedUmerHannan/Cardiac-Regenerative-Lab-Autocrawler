@@ -124,6 +124,21 @@ def _known_fields_for_record(rec: dict[str, Any]) -> dict[str, Any]:
             "nct_id": rec.get("nct_id", ""),
         }
 
+    if record_type == "patents":
+        inventors = rec.get("inventors", [])
+        pi_name = ""
+        if inventors:
+            first = inventors[0]
+            pi_name = f"{first.get('first_name', '')} {first.get('last_name', '')}".strip()
+        orgs = rec.get("assignee_organizations", [])
+        countries = rec.get("assignee_countries", [])
+        return {
+            "pi_full_name": pi_name,
+            "institution": orgs[0] if orgs else "",
+            "country": countries[0] if countries else "",
+            "patent_id": rec.get("patent_id", ""),
+        }
+
     return {}  # lab_pages: nothing pre-parsed, Claude extracts everything
 
 
@@ -159,12 +174,16 @@ def _record_year(rec: dict[str, Any]) -> int | None:
                 return int(match)
         return None
 
+    if record_type == "patents":
+        date_str = rec.get("patent_date", "") or ""
+        return int(date_str[:4]) if date_str[:4].isdigit() else None
+
     return None  # lab_pages: no reliable date
 
 
 def _text_for_record(rec: dict[str, Any]) -> str:
     record_type = rec.get("record_type")
-    if record_type in ("papers", "grants"):
+    if record_type in ("papers", "grants", "patents"):
         return f"{rec.get('title', '')}\n\n{rec.get('abstract', '')}"
     if record_type == "trials":
         return f"{rec.get('title', '')}\n\n{rec.get('brief_summary', '')}"
@@ -300,6 +319,7 @@ def main():
             "metrics": {
                 "grant_funding_usd": original.get("award_amount"),
                 "clinical_trial_ids": [original["nct_id"]] if original.get("nct_id") else [],
+                "patent_ids": [original["patent_id"]] if original.get("patent_id") else [],
             },
             "source_record_type": original.get("record_type", ""),
             "source_reference": {
@@ -307,6 +327,7 @@ def main():
                 "doi": original.get("doi", ""),
                 "project_num": original.get("project_num", ""),
                 "nct_id": original.get("nct_id", ""),
+                "patent_id": original.get("patent_id", ""),
                 "url": original.get("url", ""),
                 "year": _record_year(original),
             },
