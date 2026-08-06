@@ -215,6 +215,7 @@ def merge_cluster(indices: list[int], candidates: list[dict[str, Any]]) -> dict[
     ) or None
 
     all_trial_ids = _union_lists([m.get("metrics", {}).get("clinical_trial_ids", []) for m in members])
+    all_patent_ids = _union_lists([m.get("metrics", {}).get("patent_ids", []) for m in members])
 
     return {
         "pi_full_name": canonical_name,
@@ -244,6 +245,7 @@ def merge_cluster(indices: list[int], candidates: list[dict[str, Any]]) -> dict[
         "metrics": {
             "grant_funding_usd": total_funding,
             "clinical_trial_ids": all_trial_ids,
+            "patent_ids": all_patent_ids,
         },
         "source_record_count": len(members),
         "source_record_types": sorted(set(m.get("source_record_type", "") for m in members if m.get("source_record_type"))),
