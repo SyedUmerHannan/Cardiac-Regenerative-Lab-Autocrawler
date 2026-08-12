@@ -92,7 +92,7 @@ def check_required_env_vars():
 # Claude / Anthropic API settings
 # ---------------------------------------------------------------------------
 
-CLAUDE_MODEL = "claude-sonnet-4-6"
+CLAUDE_MODEL = "claude-sonnet-5"
 CLAUDE_MAX_TOKENS = 4096
 
 # ---------------------------------------------------------------------------
