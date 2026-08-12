@@ -37,6 +37,7 @@ import config
 BATCH_SIZE = 5  # smaller than step 5's batch size — schema per item is larger
 API_RETRY_DELAY = 2.0
 MAX_RETRIES = 2
+BATCH_POLL_INTERVAL_SECONDS = 20
 
 TRANSLATIONAL_STAGES = [
     "Discovery/Basic Science",
@@ -196,55 +197,142 @@ def _text_for_record(rec: dict[str, Any]) -> str:
 # Claude extraction
 # ---------------------------------------------------------------------------
 
-def build_batch_prompt(batch: list[dict[str, Any]]) -> str:
+def build_items_block(batch: list[dict[str, Any]]) -> str:
     items_block = ""
     for c in batch:
         known = c["known_fields"]
         known_str = ", ".join(f"{k}={v}" for k, v in known.items() if v) or "(none pre-known)"
         items_block += f"\n\n--- ITEM {c['id']} ---\nKnown fields: {known_str}\nText:\n{c['text']}"
-
-    return f"""You are extracting structured lab profile data for a cardiac regeneration research database.
-
-{EXTRACTION_SCHEMA_INSTRUCTIONS}
-
-Where "Known fields" are given for an item, use them for pi_full_name/institution/city/country
-rather than re-deriving them, unless the text clearly contradicts them.
-
-Respond with ONLY a JSON array, no other text, no markdown fences.
-{items_block}"""
+    return items_block.strip()
 
 
-def extract_batch(client: anthropic.Anthropic, batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    prompt = build_batch_prompt(batch)
+# System prompt is identical across every batch call, so it's cached
+# (cache_control) rather than re-billed on every one of potentially
+# hundreds of batch calls — Anthropic charges ~10% of base input price on
+# cache hits after the first call.
+SYSTEM_PROMPT = (
+    "You are extracting structured lab profile data for a cardiac regeneration research database.\n\n"
+    f"{EXTRACTION_SCHEMA_INSTRUCTIONS}\n\n"
+    'Where "Known fields" are given for an item, use them for pi_full_name/institution/city/country '
+    "rather than re-deriving them, unless the text clearly contradicts them.\n\n"
+    "Respond with ONLY a JSON array, no other text, no markdown fences."
+)
 
+
+def _system_block() -> list[dict[str, Any]]:
+    return [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+
+
+def _parse_extractions(raw_text: str) -> dict[str, dict[str, Any]] | None:
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    try:
+        extracted = json.loads(text)
+        return {e["id"]: e for e in extracted if "id" in e}
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return None
+
+
+def extract_batch_sync(client: anthropic.Anthropic, batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Synchronous fallback for batches that fail via the Batch API (rare) — full price, not the 50% batch rate."""
     for attempt in range(MAX_RETRIES + 1):
         try:
             response = client.messages.create(
                 model=config.CLAUDE_MODEL,
                 max_tokens=config.CLAUDE_MAX_TOKENS,
-                messages=[{"role": "user", "content": prompt}],
+                system=_system_block(),
+                messages=[{"role": "user", "content": build_items_block(batch)}],
             )
-            raw_text = "".join(
-                block.text for block in response.content if block.type == "text"
-            ).strip()
+            raw_text = "".join(b.text for b in response.content if b.type == "text")
+            extractions = _parse_extractions(raw_text)
+            if extractions is not None:
+                return extractions
+            print(f"    [warn] sync retry attempt {attempt + 1}: unparseable response")
+        except anthropic.APIError as e:
+            print(f"    [warn] sync retry attempt {attempt + 1} failed: {e}")
+        if attempt < MAX_RETRIES:
+            time.sleep(API_RETRY_DELAY)
 
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:]
-                raw_text = raw_text.strip()
-
-            extracted = json.loads(raw_text)
-            return {e["id"]: e for e in extracted if "id" in e}
-
-        except (json.JSONDecodeError, anthropic.APIError) as e:
-            print(f"    [warn] batch extraction attempt {attempt + 1} failed: {e}")
-            if attempt < MAX_RETRIES:
-                time.sleep(API_RETRY_DELAY)
-
-    print(f"    [warn] giving up on batch after {MAX_RETRIES + 1} attempts — "
+    print(f"    [warn] giving up on batch after {MAX_RETRIES + 1} sync attempts — "
           f"{len(batch)} items will be flagged for manual review")
     return {c["id"]: {"id": c["id"], "_extraction_failed": True} for c in batch}
+
+
+def submit_batch_job(client: anthropic.Anthropic, batches: list[list[dict[str, Any]]]) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+    requests = []
+    custom_id_map = {}
+    for i, batch in enumerate(batches):
+        custom_id = f"batch_{i}"
+        custom_id_map[custom_id] = batch
+        requests.append({
+            "custom_id": custom_id,
+            "params": {
+                "model": config.CLAUDE_MODEL,
+                "max_tokens": config.CLAUDE_MAX_TOKENS,
+                "system": _system_block(),
+                "messages": [{"role": "user", "content": build_items_block(batch)}],
+            },
+        })
+    batch_job = client.messages.batches.create(requests=requests)
+    return batch_job.id, custom_id_map
+
+
+def wait_for_batch_job(client: anthropic.Anthropic, batch_id: str):
+    print(f"  Submitted Batch API job {batch_id}. Waiting for completion "
+          f"(Anthropic's Batch API can take anywhere from minutes to ~24h)...")
+    while True:
+        batch_job = client.messages.batches.retrieve(batch_id)
+        counts = batch_job.request_counts
+        print(f"    status={batch_job.processing_status} | "
+              f"succeeded={counts.succeeded} errored={counts.errored} "
+              f"processing={counts.processing} canceled={counts.canceled} expired={counts.expired}")
+        if batch_job.processing_status == "ended":
+            return batch_job
+        time.sleep(BATCH_POLL_INTERVAL_SECONDS)
+
+
+def fetch_batch_results(client: anthropic.Anthropic, batch_id: str) -> dict[str, str | None]:
+    results = {}
+    for entry in client.messages.batches.results(batch_id):
+        if entry.result.type == "succeeded":
+            raw_text = "".join(b.text for b in entry.result.message.content if b.type == "text")
+            results[entry.custom_id] = raw_text
+        else:
+            results[entry.custom_id] = None
+    return results
+
+
+def extract_all(candidates: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    client = _client()
+    batches = [candidates[i:i + BATCH_SIZE] for i in range(0, len(candidates), BATCH_SIZE)]
+
+    print(f"Submitting {len(batches)} batches ({len(candidates)} items) as one Batch API job "
+          f"(50% cheaper than synchronous calls)...")
+    batch_id, custom_id_map = submit_batch_job(client, batches)
+    wait_for_batch_job(client, batch_id)
+    raw_results = fetch_batch_results(client, batch_id)
+
+    all_extractions = {}
+    failed_batches = []
+    for custom_id, batch in custom_id_map.items():
+        raw_text = raw_results.get(custom_id)
+        extractions = _parse_extractions(raw_text) if raw_text else None
+        if extractions is None:
+            failed_batches.append(batch)
+        else:
+            all_extractions.update(extractions)
+
+    if failed_batches:
+        print(f"  {len(failed_batches)} batch(es) didn't come back parseable via the Batch API — "
+              f"retrying those synchronously...")
+        for batch in failed_batches:
+            all_extractions.update(extract_batch_sync(client, batch))
+
+    return all_extractions
 
 
 # ---------------------------------------------------------------------------
@@ -273,13 +361,7 @@ def main():
             "text": _text_for_record(rec)[:4000],
         })
 
-    client = _client()
-    all_extractions = {}
-    num_batches = (len(candidates) + BATCH_SIZE - 1) // BATCH_SIZE
-    for batch_num in range(num_batches):
-        batch = candidates[batch_num * BATCH_SIZE: (batch_num + 1) * BATCH_SIZE]
-        print(f"  Extracting batch {batch_num + 1}/{num_batches} ({len(batch)} items)...")
-        all_extractions.update(extract_batch(client, batch))
+    all_extractions = extract_all(candidates)
 
     labs_extracted = []
     needs_review = []
