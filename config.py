@@ -116,10 +116,63 @@ CLINICALTRIALS_BASE = "https://clinicaltrials.gov/api/v2/studies"
 USPTO_PATENTSVIEW_BASE = "https://search.patentsview.org/api/v1/patent/"
 USPTO_PATENTSVIEW_API_KEY = os.environ.get("USPTO_PATENTSVIEW_API_KEY", "")
 
-# Grant sources beyond NIH RePORTER (Horizon Europe, UKRI) are NOT yet wired up
-# in v1 — NIH RePORTER has the cleanest public API and is built first.
-# These are placeholders for a fast-follow pass.
-GRANT_SOURCES_PENDING = ["horizon_europe", "ukri"]
+# ---------------------------------------------------------------------------
+# Grant sources: NIH RePORTER (v1), Horizon Europe & UKRI (fast-follow, now wired up)
+# ---------------------------------------------------------------------------
+
+# EU Funding & Tenders Portal search API (SEDIA). Public, no key required for
+# read-only search. Query shape mirrors the portal's own search UI calls.
+# IMPORTANT — unverified against a live API response: search.patentsview.org-style
+# caveat applies here too. This sandbox's network allowlist doesn't include
+# api.tech.ec.europa.eu, so the request/response parsing below is written against
+# the portal's documented result schema but hasn't been exercised live. Worth a
+# smoke test before relying on it in a real run.
+HORIZON_EUROPE_SEARCH_BASE = "https://api.tech.ec.europa.eu/search-api/prod/rest/search"
+HORIZON_EUROPE_API_KEY = os.environ.get("HORIZON_EUROPE_API_KEY", "SEDIA")  # "SEDIA" is the portal's public default apiKey
+
+# UKRI Gateway to Research (GtR) API. Public, no key required.
+# Docs: https://gtr.ukri.org/resources/api.html
+# IMPORTANT — unverified against a live API response: gtr.ukri.org isn't in this
+# sandbox's network allowlist. Parsing logic is written against GtR's documented
+# JSON schema (json-v7) but hasn't been exercised live — smoke test before relying
+# on it in a real run, particularly the PI-resolution link-following step, since
+# GtR's linked-resource format has changed across API versions.
+GTR_PROJECTS_BASE = "https://gtr.ukri.org/gtr/api/projects"
+GTR_ACCEPT_HEADER = "application/vnd.rcuk.gtr.json-v7"
+
+GRANT_SOURCES_PENDING: list[str] = []  # both fast-follow sources are now implemented
+
+# ---------------------------------------------------------------------------
+# Clinical trial sources: ClinicalTrials.gov (v1) & EU CTIS (fast-follow, now wired up)
+# ---------------------------------------------------------------------------
+
+# EU Clinical Trials Information System (CTIS) public API.
+# Docs: https://euclinicaltrials.eu/ctis-public-api-documentation/
+# IMPORTANT — unverified against a live API response: euclinicaltrials.eu isn't in
+# this sandbox's network allowlist. CTIS's public API has changed its exact path
+# structure across releases — verify the current search endpoint path in the docs
+# above before relying on this in a real run.
+CTIS_SEARCH_BASE = "https://euclinicaltrials.eu/ctis-public-api/publicSearch"
+
+TRIAL_SOURCES_PENDING: list[str] = []  # EU CTR/CTIS is now implemented
+
+# ---------------------------------------------------------------------------
+# Geocoding (step 6 fast-follow, now wired up)
+# ---------------------------------------------------------------------------
+
+# Nominatim (OpenStreetMap) — free, no API key required. Usage policy caps
+# requests at 1/sec and requires a descriptive User-Agent; both are respected
+# by the geocoding helper in 6_extract_structured.py.
+NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
+GEOCODE_USER_AGENT = "VirelionBiotech-CardiacLabResearchBot/1.0 (+contact: research@virelion.example)"
+GEOCODE_DELAY_SECONDS = 1.0
+
+# ---------------------------------------------------------------------------
+# Citation impact lookups (step 8 fast-follow, now wired up)
+# ---------------------------------------------------------------------------
+
+SEMANTIC_SCHOLAR_BATCH_SIZE = 500  # S2's documented batch endpoint limit
+SEMANTIC_SCHOLAR_DELAY_SECONDS = 1.0  # conservative default without an API key
 
 # ---------------------------------------------------------------------------
 # Domain search terms
@@ -179,3 +232,18 @@ CRAWL_SEED_DIRECTORIES = [
 
 AVI_ACTIVE_WINDOW_MONTHS = 30  # midpoint of the 24-36mo spec range
 AVI_INACTIVE_THRESHOLD_MONTHS = 36
+
+# ---------------------------------------------------------------------------
+# Industry / startup spinoff heuristic (step 8 fast-follow, now wired up)
+# ---------------------------------------------------------------------------
+
+# No dedicated spinoff-affiliation data source exists in v1. As a heuristic
+# proxy, a lab is flagged if any of its associated patents (from step 10) are
+# assigned to an organization whose name doesn't look academic and doesn't
+# match the lab's own institution — see compute_industry_spinoff_flag() in
+# 8_score_and_enrich.py. This is a proxy signal, not a verified affiliation.
+SPINOFF_ACADEMIC_ORG_KEYWORDS = {
+    "university", "univ", "institute", "inst", "college", "hospital",
+    "medical center", "medical centre", "school", "foundation",
+    "national institutes", "nih", "polytechnic", "academy",
+}
