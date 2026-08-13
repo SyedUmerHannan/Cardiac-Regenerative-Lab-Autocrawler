@@ -2,10 +2,20 @@
 3_harvest_trials.py — Cardiac-Regenerative-Lab-Autocrawler
 Virelion Biotech
 
-Harvests trial records from ClinicalTrials.gov (API v2) matching the domain
-search terms in config.py. EU Clinical Trials Register is stubbed — its API
-(CTIS) has a different schema and auth model, left for a fast-follow pass
-rather than rushed into v1.
+Harvests trial records matching the domain search terms in config.py from
+two sources:
+    - ClinicalTrials.gov (API v2, US-centric but includes many international
+      sites) — v1, fully live-tested.
+    - EU Clinical Trials Information System (CTIS) — fast-follow, now
+      implemented.
+
+CTIS has a different schema and auth model from ClinicalTrials.gov v2, and
+(like step 10's PatentsView integration) hasn't been exercised against a
+live call in this sandbox, since euclinicaltrials.eu isn't in the network
+allowlist. Parsing logic is written against CTIS's documented public search
+schema — smoke test against the real API before relying on this in a real
+run, particularly the exact search endpoint path, which has moved across
+CTIS releases (see config.py).
 
 Output: data/<year>/raw_trials.json
     A list of trial records, each tagged with its source and matched term.
@@ -24,6 +34,9 @@ import config
 
 CTGOV_DELAY = 0.3
 CTGOV_PAGE_SIZE = 100  # ClinicalTrials.gov v2 API max pageSize
+
+CTIS_DELAY = 0.5
+CTIS_PAGE_SIZE = 50
 
 
 def ctgov_search(term: str, page_size: int = CTGOV_PAGE_SIZE) -> list[dict[str, Any]]:
@@ -121,16 +134,71 @@ def _parse_ctgov_study(study: dict) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Stub for fast-follow: EU Clinical Trials Register / CTIS
+# EU Clinical Trials Information System (CTIS)
 # ---------------------------------------------------------------------------
 
-def harvest_eu_ctr(term: str) -> list[dict[str, Any]]:
+def ctis_search(term: str, page_size: int = CTIS_PAGE_SIZE) -> list[dict[str, Any]]:
     """
-    TODO (fast-follow): EU Clinical Trials Information System (CTIS) API.
-    Different schema/auth from ClinicalTrials.gov v2 — deliberately not
-    implemented in v1.
+    Paginates through CTIS's public search results for a single search term.
+    CTIS's public API is offset/page based and returns trial "applications"
+    rather than ClinicalTrials.gov's flatter "studies" — each application
+    can bundle multiple per-member-state authorizations, which are collapsed
+    here into a single record per EU CT number (see _parse_ctis_application).
     """
-    return []
+    records = []
+    page = 0
+    headers = {"Content-Type": "application/json"}
+
+    while True:
+        body = {
+            "searchCriteria": {"containAll": term},
+            "pagination": {"page": page, "size": page_size},
+        }
+        resp = requests.post(config.CTIS_SEARCH_BASE, json=body, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        applications = data.get("data", []) or data.get("content", [])
+        for app in applications:
+            records.append(_parse_ctis_application(app))
+
+        total_pages = data.get("totalPages", page + 1)
+        time.sleep(CTIS_DELAY)
+
+        if page + 1 >= total_pages or not applications:
+            break
+        page += 1
+
+    return records
+
+
+def _parse_ctis_application(app: dict) -> dict[str, Any]:
+    locations = []
+    countries = set()
+    for member_state in app.get("authorizedApplications", app.get("memberStatesConcerned", [])) or []:
+        country = member_state.get("country") if isinstance(member_state, dict) else member_state
+        if country:
+            countries.add(country)
+            locations.append({"facility": "", "city": "", "country": country})
+
+    sponsor = app.get("sponsor", {}) or {}
+
+    return {
+        "source": "eu_ctis",
+        "nct_id": app.get("ctNumber", ""),  # EU CT number, kept in the nct_id field for a single downstream schema
+        "title": app.get("title", ""),
+        "official_title": app.get("publicTitle", app.get("title", "")),
+        "status": app.get("overallStatus", app.get("ctStatus", "")),
+        "phase": app.get("trialPhase", ""),
+        "conditions": app.get("therapeuticAreas", []) or app.get("medicalConditions", []),
+        "interventions": [p.get("name", "") for p in app.get("investigationalMedicinalProducts", []) or []],
+        "lead_sponsor": sponsor.get("name", ""),
+        "investigators": [],  # CTIS's public search doesn't expose individual investigator names
+        "locations": locations,
+        "start_date": app.get("trialStartDate", ""),
+        "completion_date": app.get("trialEndDate", ""),
+        "brief_summary": app.get("primaryObjective", app.get("shortDescription", "")),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +216,13 @@ def harvest_term(term: str) -> list[dict[str, Any]]:
     except requests.RequestException as e:
         print(f"    [warn] ClinicalTrials.gov search failed for '{term}': {e}")
 
-    results.extend(harvest_eu_ctr(term))  # currently a no-op
+    print(f"  EU CTIS: searching '{term}'")
+    try:
+        ctis_results = ctis_search(term)
+        results.extend(ctis_results)
+        print(f"    -> {len(ctis_results)} EU CTIS trial records")
+    except requests.RequestException as e:
+        print(f"    [warn] EU CTIS search failed for '{term}': {e}")
 
     return results
 
@@ -156,8 +230,8 @@ def harvest_term(term: str) -> list[dict[str, Any]]:
 def main():
     config.ensure_run_dir()
 
-    print(f"Harvesting trials for {len(config.ALL_SEARCH_TERMS)} search terms...")
-    print("(EU CTR pending fast-follow implementation)\n")
+    print(f"Harvesting trials for {len(config.ALL_SEARCH_TERMS)} search terms across "
+          f"ClinicalTrials.gov and EU CTIS...\n")
 
     all_records = []
     for term in config.ALL_SEARCH_TERMS:
