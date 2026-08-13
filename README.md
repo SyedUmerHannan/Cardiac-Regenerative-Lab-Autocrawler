@@ -187,11 +187,3 @@ Outputs are saved to the current year's directory under `data/YYYY/`:
 - **`needs_manual_review.json`** / **`extraction_needs_review.json`** — Items that failed Claude classification/extraction after retries, held out for manual review rather than silently dropped or wrongly included.
 
 ---
-
-## 🔭 Fast-Follow / Not Yet Implemented
-
-- Horizon Europe and UKRI grant sources (stubbed in `2_harvest_grants.py`)
-- EU Clinical Trials Register / CTIS (stubbed in `3_harvest_trials.py`)
-- Geocoding for `geo_coordinates` (currently always `null`)
-- Citation impact and industry/startup spinoff affiliation metrics
-- A more robust institutional migration signal for the annual diff (requires a stable identifier like ORCID)
